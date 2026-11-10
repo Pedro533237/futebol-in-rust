@@ -250,9 +250,7 @@ impl Renderer {
             CPUAccessFlags: 0,
             MiscFlags: 0,
         };
-        let mut depth: Option<ID3D10Texture2D> = None;
-        device.CreateTexture2D(&dd, None, Some(&mut depth))?;
-        let depth = depth.unwrap();
+        let depth: ID3D10Texture2D = device.CreateTexture2D(&dd, None)?;
         let mut dsv: Option<ID3D10DepthStencilView> = None;
         device.CreateDepthStencilView(&depth, None, Some(&mut dsv))?;
         let dsv = dsv.unwrap();
@@ -411,7 +409,7 @@ impl Renderer {
         d.RSSetState(&self.rs);
 
         let sky = [0.45f32, 0.66, 0.92, 1.0];
-        d.ClearRenderTargetView(&self.rtv, sky.as_ptr());
+        d.ClearRenderTargetView(&self.rtv, &sky);
         d.ClearDepthStencilView(&self.dsv, D3D10_CLEAR_DEPTH.0 as u32, 1.0, 0);
 
         d.IASetInputLayout(&self.layout);

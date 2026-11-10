@@ -180,7 +180,7 @@ impl Game {
             let ad = if p.team == 0 { 1.0 } else { -1.0 };
             let goal = V3::new(ad * HALF_L, 0.0, 0.0);
             let own_goal_x = -ad * HALF_L;
-            let mut desired = V3::ZERO;
+            let desired: V3;
             let mut ai_shot: Option<(V3, f32, f32)> = None;
 
             if i == self.controlled {
