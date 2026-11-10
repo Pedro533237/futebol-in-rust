@@ -2,7 +2,7 @@ use std::ffi::c_void;
 use std::mem::size_of;
 
 use windows::core::{s, Result, PCSTR};
-use windows::Win32::Foundation::{FALSE, HMODULE, HWND, TRUE};
+use windows::Win32::Foundation::{BOOL, FALSE, HMODULE, HWND, TRUE};
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use windows::Win32::Graphics::Direct3D::{ID3DBlob, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST};
 use windows::Win32::Graphics::Direct3D10::*;
@@ -10,8 +10,6 @@ use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::Graphics::Dxgi::*;
 
 use crate::math::*;
-
-const MSAA: u32 = 4;
 
 // Materiais: params = [especular, gramado, sem_iluminacao, 0]
 pub const MAT_DIFFUSE: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
@@ -143,7 +141,9 @@ unsafe fn compile(src: &str, entry: PCSTR, target: PCSTR) -> Result<ID3DBlob> {
                 eb.GetBufferPointer() as *const u8,
                 eb.GetBufferSize(),
             );
-            eprintln!("Erro de shader:\n{}", String::from_utf8_lossy(msg));
+            let text = String::from_utf8_lossy(msg).to_string();
+            eprintln!("Erro de shader:\n{}", text);
+            return Err(windows::core::Error::new(e.code(), format!("Erro de shader: {}", text)));
         }
         return Err(e);
     }
@@ -197,7 +197,39 @@ fn build_sphere() -> (Vec<Vertex>, Vec<u32>) {
 }
 
 impl Renderer {
+    /// Tenta: placa de video com MSAA 4x, sem MSAA, e depois WARP (software).
     pub unsafe fn new(hwnd: HWND, w: u32, h: u32) -> Result<Renderer> {
+        let tentativas = [
+            (D3D10_DRIVER_TYPE_HARDWARE, 4u32, "GPU + MSAA 4x"),
+            (D3D10_DRIVER_TYPE_HARDWARE, 1u32, "GPU sem MSAA"),
+            (D3D10_DRIVER_TYPE_WARP, 4u32, "WARP + MSAA 4x"),
+            (D3D10_DRIVER_TYPE_WARP, 1u32, "WARP sem MSAA"),
+        ];
+        let mut erros = String::new();
+        let mut ultimo = None;
+        for (driver, msaa, nome) in tentativas {
+            match Renderer::new_with(hwnd, w, h, driver, msaa) {
+                Ok(r) => {
+                    println!("Renderer iniciado: {}", nome);
+                    return Ok(r);
+                }
+                Err(e) => {
+                    erros.push_str(&format!("[{}] {}\n", nome, e));
+                    ultimo = Some(e);
+                }
+            }
+        }
+        let e = ultimo.unwrap();
+        Err(windows::core::Error::new(e.code(), erros))
+    }
+
+    unsafe fn new_with(
+        hwnd: HWND,
+        w: u32,
+        h: u32,
+        driver: D3D10_DRIVER_TYPE,
+        msaa: u32,
+    ) -> Result<Renderer> {
         // ---- dispositivo + swap chain (D3D10) ----
         let sd = DXGI_SWAP_CHAIN_DESC {
             BufferDesc: DXGI_MODE_DESC {
@@ -207,7 +239,7 @@ impl Renderer {
                 Format: DXGI_FORMAT_R8G8B8A8_UNORM,
                 ..Default::default()
             },
-            SampleDesc: DXGI_SAMPLE_DESC { Count: MSAA, Quality: 0 },
+            SampleDesc: DXGI_SAMPLE_DESC { Count: msaa, Quality: 0 },
             BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
             BufferCount: 1,
             OutputWindow: hwnd,
@@ -220,7 +252,7 @@ impl Renderer {
         let mut device: Option<ID3D10Device> = None;
         D3D10CreateDeviceAndSwapChain(
             None,
-            D3D10_DRIVER_TYPE_HARDWARE,
+            driver,
             HMODULE::default(),
             0,
             D3D10_SDK_VERSION,
@@ -244,7 +276,7 @@ impl Renderer {
             MipLevels: 1,
             ArraySize: 1,
             Format: DXGI_FORMAT_D32_FLOAT,
-            SampleDesc: DXGI_SAMPLE_DESC { Count: MSAA, Quality: 0 },
+            SampleDesc: DXGI_SAMPLE_DESC { Count: msaa, Quality: 0 },
             Usage: D3D10_USAGE_DEFAULT,
             BindFlags: D3D10_BIND_DEPTH_STENCIL.0 as u32,
             CPUAccessFlags: 0,
@@ -355,7 +387,7 @@ impl Renderer {
             SlopeScaledDepthBias: 0.0,
             DepthClipEnable: TRUE,
             ScissorEnable: FALSE,
-            MultisampleEnable: TRUE,
+            MultisampleEnable: BOOL::from(msaa > 1),
             AntialiasedLineEnable: FALSE,
         };
         let mut rs: Option<ID3D10RasterizerState> = None;

@@ -149,8 +149,19 @@ unsafe fn run() -> Result<()> {
     }
 }
 
+fn show_error(text: &str) {
+    let mut msg: Vec<u16> = text.encode_utf16().collect();
+    msg.push(0);
+    let mut title: Vec<u16> = "Futebol - erro".encode_utf16().collect();
+    title.push(0);
+    unsafe {
+        MessageBoxW(None, PCWSTR(msg.as_ptr()), PCWSTR(title.as_ptr()), MB_OK | MB_ICONERROR);
+    }
+}
+
 fn main() {
     if let Err(e) = unsafe { run() } {
         eprintln!("Erro: {e}");
+        show_error(&format!("{e}"));
     }
 }
